@@ -1,12 +1,42 @@
 import axios from 'axios';
 import { GROCERY_DEFAULT_ITEMS } from '../data/groceryDefaults.js';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbx1R1N5s03V0XULHcRo90l3JB_nXJPoEoB5wECqZBotAjsaCf3Npxr2lVqGQF6aXjrs/exec';
+const API_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
 
 const client = axios.create({ baseURL: API_URL });
 
+let activeRequestsCount = 0;
+const loadingListeners = new Set();
+
+function notifyLoadingListeners() {
+  const isLoading = activeRequestsCount > 0;
+  loadingListeners.forEach((cb) => {
+    try {
+      cb(isLoading, activeRequestsCount);
+    } catch (e) {
+      console.error(e);
+    }
+  });
+}
+
+export function subscribeToApiLoading(callback) {
+  loadingListeners.add(callback);
+  callback(activeRequestsCount > 0, activeRequestsCount);
+  return () => loadingListeners.delete(callback);
+}
+
 async function get(action, params = {}) {
-  if (!API_URL) return localGet(action, params);
+  activeRequestsCount++;
+  notifyLoadingListeners();
+  if (!API_URL) {
+    try {
+      return await localGet(action, params);
+    } finally {
+      activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+      notifyLoadingListeners();
+    }
+  }
   try {
     const res = await client.get('', { params: { action, ...params } });
     if (!res.data || !res.data.success) throw new Error((res.data && res.data.error) || 'Request failed');
@@ -14,11 +44,23 @@ async function get(action, params = {}) {
   } catch (err) {
     console.warn(`API get error (${action}), falling back to local handler:`, err.message);
     return localGet(action, params);
+  } finally {
+    activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+    notifyLoadingListeners();
   }
 }
 
 async function post(action, body = {}) {
-  if (!API_URL) return localPost(action, body);
+  activeRequestsCount++;
+  notifyLoadingListeners();
+  if (!API_URL) {
+    try {
+      return await localPost(action, body);
+    } finally {
+      activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+      notifyLoadingListeners();
+    }
+  }
   try {
     const res = await axios.post(`${API_URL}?action=${action}`, JSON.stringify(body), {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -32,6 +74,9 @@ async function post(action, body = {}) {
     }
     console.warn(`API post error (${action}), falling back to local handler:`, err.message);
     return localPost(action, body);
+  } finally {
+    activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+    notifyLoadingListeners();
   }
 }
 
@@ -39,61 +84,7 @@ async function post(action, body = {}) {
 function getLocalShops() {
   try {
     const data = localStorage.getItem('burkit_shops');
-    const existing = data ? JSON.parse(data) : [];
-    const seed = [
-      {
-        shopId: 'SHP001',
-        ownerUserId: 'USR001',
-        ownerName: 'Ram Kumar',
-        shopName: 'ஸ்ரீ முருகன் மளிகை கடை (Sri Murugan Grocery Store)',
-        whatsappNo: '9876543210',
-        shopPhoto: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=60',
-        description: 'அனைத்து விதமான புது காய்கறிகள் மற்றும் தரமான மளிகைப் பொருட்கள் கிடைக்கும்.',
-        villageName: 'பர்கித்மாநகரம் (Burkitmanagaram)',
-        category: 'Grocery',
-        likeCount: 15,
-        status: 'Approved',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        shopId: 'SHP002',
-        ownerUserId: 'USR002',
-        ownerName: 'Senthil Kumaran',
-        shopName: 'அன்னபூர்ணா ஹோட்டல் (Annapoorna Hotel)',
-        whatsappNo: '9876543211',
-        shopPhoto: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=500&auto=format&fit=crop&q=60',
-        description: 'சுவையான காலை சிற்றுண்டி, ருசியான மதிய உணவு & மாலை டிபன் சாப்பாடு கிடைக்கும்.',
-        villageName: 'பர்கித்மாநகரம் (Burkitmanagaram)',
-        category: 'Hotel',
-        likeCount: 24,
-        status: 'Approved',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        shopId: 'SHP003',
-        ownerUserId: 'USR003',
-        ownerName: 'Venkatesh',
-        shopName: 'அருள் ஃபார்மசி & மெடிக்கல்ஸ் (Arul Medicals)',
-        whatsappNo: '9876543212',
-        shopPhoto: 'https://images.unsplash.com/photo-1586015555751-63bb77f4322a?w=500&auto=format&fit=crop&q=60',
-        description: 'அனைத்து விதமான மருந்து மாத்திரைகள் மற்றும் முதலுதவி சாதனங்கள் கிடைக்கும்.',
-        villageName: 'பர்கித்மாநகரம் (Burkitmanagaram)',
-        category: 'Medical',
-        likeCount: 9,
-        status: 'Approved',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-
-    const map = new Map();
-    seed.forEach((s) => map.set(s.shopId, s));
-    existing.forEach((s) => map.set(s.shopId, s));
-    const merged = Array.from(map.values());
-    localStorage.setItem('burkit_shops', JSON.stringify(merged));
-    return merged;
+    return data ? JSON.parse(data) : [];
   } catch {
     return [];
   }
@@ -110,36 +101,7 @@ function saveLocalShops(shops) {
 function getLocalShopProducts() {
   try {
     const data = localStorage.getItem('burkit_shop_products');
-    const existing = data ? JSON.parse(data) : [];
-
-    const defaultItems = GROCERY_DEFAULT_ITEMS.map((item, idx) => ({
-      productId: `SP_DEF_${idx + 1}`,
-      shopId: 'SHP001',
-      productName: item.productName,
-      tamilName: item.tamilName,
-      subCategory: item.subCategory,
-      unitScale: item.defaultScale || '1Kg',
-      availableScales: item.availableScales || ['250g', '500g', '1Kg'],
-      price: item.price || '40',
-      inStock: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
-
-    const hotelItems = [
-      { productId: 'SP_HOTEL_1', shopId: 'SHP002', productName: 'Idli Set (3 Pcs)', tamilName: 'இட்லி செட் (3 எண்ணம்)', subCategory: 'Breakfast', unitScale: '1 Set', price: '30', inStock: true },
-      { productId: 'SP_HOTEL_2', shopId: 'SHP002', productName: 'Special Dosa', tamilName: 'ஸ்பெஷல் தோசை', subCategory: 'Breakfast', unitScale: '1 Pc', price: '45', inStock: true },
-      { productId: 'SP_HOTEL_3', shopId: 'SHP002', productName: 'South Indian Meals', tamilName: 'தென்னிந்திய சாப்பாடு', subCategory: 'Lunch', unitScale: '1 Plate', price: '90', inStock: true },
-      { productId: 'SP_HOTEL_4', shopId: 'SHP002', productName: 'Parotta Set (2 Pcs)', tamilName: 'பரோட்டா செட் (2 எண்ணம்)', subCategory: 'Dinner', unitScale: '1 Set', price: '40', inStock: true },
-    ];
-
-    const seed = [...defaultItems, ...hotelItems];
-    const map = new Map();
-    seed.forEach((p) => map.set(p.productId, p));
-    existing.forEach((p) => map.set(p.productId, p));
-    const merged = Array.from(map.values());
-    localStorage.setItem('burkit_shop_products', JSON.stringify(merged));
-    return merged;
+    return data ? JSON.parse(data) : [];
   } catch {
     return [];
   }
@@ -153,84 +115,37 @@ function saveLocalShopProducts(products) {
   }
 }
 
+// Purge legacy dummy seed data (SHP001, SHP002, SHP003, etc.) from browser localStorage
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const localShops = localStorage.getItem('burkit_shops');
+    if (localShops) {
+      const parsed = JSON.parse(localShops);
+      const cleaned = parsed.filter((s) => !['SHP001', 'SHP002', 'SHP003'].includes(s.shopId));
+      localStorage.setItem('burkit_shops', JSON.stringify(cleaned));
+    }
+    const localProducts = localStorage.getItem('burkit_shop_products');
+    if (localProducts) {
+      const parsed = JSON.parse(localProducts);
+      const cleaned = parsed.filter(
+        (p) =>
+          !['SHP001', 'SHP002', 'SHP003'].includes(p.shopId) &&
+          !String(p.productId).startsWith('SP_DEF_') &&
+          !String(p.productId).startsWith('SP_HOTEL_')
+      );
+      localStorage.setItem('burkit_shop_products', JSON.stringify(cleaned));
+    }
+  }
+} catch (e) {
+  console.error('LocalStorage cleanup error:', e);
+}
+
 function getSeedShops() {
-  const seed = [
-    {
-      shopId: 'SHP001',
-      ownerUserId: 'USR001',
-      ownerName: 'Ram Kumar',
-      shopName: 'ஸ்ரீ முருகன் மளிகை கடை (Sri Murugan Grocery Store)',
-      whatsappNo: '9876543210',
-      shopPhoto: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=60',
-      description: 'அனைத்து விதமான புது காய்கறிகள் மற்றும் தரமான மளிகைப் பொருட்கள் கிடைக்கும்.',
-      villageName: 'பர்கித்மாநகரம் (Burkitmanagaram)',
-      category: 'Grocery',
-      likeCount: 15,
-      status: 'Approved',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      shopId: 'SHP002',
-      ownerUserId: 'USR002',
-      ownerName: 'Senthil Kumaran',
-      shopName: 'அன்னபூர்ணா ஹோட்டல் (Annapoorna Hotel)',
-      whatsappNo: '9876543211',
-      shopPhoto: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=500&auto=format&fit=crop&q=60',
-      description: 'சுவையான காலை சிற்றுண்டி, ருசியான மதிய உணவு & மாலை டிபன் சாப்பாடு கிடைக்கும்.',
-      villageName: 'பர்கித்மாநகரம் (Burkitmanagaram)',
-      category: 'Hotel',
-      likeCount: 24,
-      status: 'Approved',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      shopId: 'SHP003',
-      ownerUserId: 'USR003',
-      ownerName: 'Venkatesh',
-      shopName: 'அருள் ஃபார்மசி & மெடிக்கல்ஸ் (Arul Medicals)',
-      whatsappNo: '9876543212',
-      shopPhoto: 'https://images.unsplash.com/photo-1586015555751-63bb77f4322a?w=500&auto=format&fit=crop&q=60',
-      description: 'அனைத்து விதமான மருந்து மாத்திரைகள் மற்றும் முதலுதவி சாதனங்கள் கிடைக்கும்.',
-      villageName: 'பர்கித்மாநகரம் (Burkitmanagaram)',
-      category: 'Medical',
-      likeCount: 9,
-      status: 'Approved',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
-  saveLocalShops(seed);
-  return seed;
+  return [];
 }
 
 function getSeedShopProducts() {
-  const defaultItems = GROCERY_DEFAULT_ITEMS.map((item, idx) => ({
-    productId: `SP_DEF_${idx + 1}`,
-    shopId: 'SHP001',
-    productName: item.productName,
-    tamilName: item.tamilName,
-    subCategory: item.subCategory,
-    unitScale: item.defaultScale || '1Kg',
-    availableScales: item.availableScales || ['250g', '500g', '1Kg'],
-    price: item.price || '40',
-    inStock: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }));
-
-  // Hotel items
-  const hotelItems = [
-    { productId: 'SP_HOTEL_1', shopId: 'SHP002', productName: 'Idli Set (3 Pcs)', tamilName: 'இட்லி செட் (3 எண்ணம்)', subCategory: 'Breakfast', unitScale: '1 Set', price: '30', inStock: true },
-    { productId: 'SP_HOTEL_2', shopId: 'SHP002', productName: 'Special Dosa', tamilName: 'ஸ்பெஷல் தோசை', subCategory: 'Breakfast', unitScale: '1 Pc', price: '45', inStock: true },
-    { productId: 'SP_HOTEL_3', shopId: 'SHP002', productName: 'South Indian Meals', tamilName: 'தென்னிந்திய சாப்பாடு', subCategory: 'Lunch', unitScale: '1 Plate', price: '90', inStock: true },
-    { productId: 'SP_HOTEL_4', shopId: 'SHP002', productName: 'Parotta Set (2 Pcs)', tamilName: 'பரோட்டா செட் (2 எண்ணம்)', subCategory: 'Dinner', unitScale: '1 Set', price: '40', inStock: true },
-  ];
-
-  const seed = [...defaultItems, ...hotelItems];
-  saveLocalShopProducts(seed);
-  return seed;
+  return [];
 }
 
 function getLocalProducts() {

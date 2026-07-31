@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import Loader from '../components/Loader.jsx';
 import { openWhatsApp, buildWhatsAppMessage } from '../utils/whatsapp.js';
 import { calculateHaversineDistance, formatDistance, getGoogleMapsDirectionsUrl } from '../utils/distance.js';
+import { goBack } from '../utils/navigation.js';
 
 export default function ProductDetails() {
   const { id } = useParams();
@@ -166,7 +167,7 @@ export default function ProductDetails() {
           {/* Top Control Buttons */}
           <div className="flex items-center justify-between mb-6">
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => goBack(navigate, '/')}
               className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white hover:bg-white/30"
             >
               <ArrowLeft size={18} />
@@ -223,7 +224,7 @@ export default function ProductDetails() {
           )}
 
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => goBack(navigate, '/')}
             className="absolute top-4 left-4 w-10 h-10 rounded-full glass flex items-center justify-center z-10"
           >
             <ArrowLeft size={18} />

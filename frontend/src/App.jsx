@@ -26,6 +26,7 @@ import EditShop from './pages/EditShop.jsx';
 import MyShops from './pages/MyShops.jsx';
 
 import InstallPwaBanner from './components/InstallPwaBanner.jsx';
+import GlobalApiLoader from './components/GlobalApiLoader.jsx';
 
 function PrivateRoute({ children }) {
   const { user } = useAuth();
@@ -48,6 +49,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col max-w-lg mx-auto bg-cloud-100 dark:bg-ink-900 relative">
+      <GlobalApiLoader />
       <InstallPwaBanner />
       <div className={`flex-1 ${showNav ? 'pb-20' : ''}`}>
         <Routes>

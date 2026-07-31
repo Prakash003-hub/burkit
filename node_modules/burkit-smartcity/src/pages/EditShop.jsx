@@ -7,6 +7,8 @@ import Loader from '../components/Loader.jsx';
 import { SHOP_CATEGORIES, GROCERY_SUBCATEGORIES } from '../data/groceryDefaults.js';
 import { BURKIT_AREAS } from '../data/areaDefaults.js';
 
+import { goBack } from '../utils/navigation.js';
+
 export default function EditShop() {
   const { id } = useParams();
   const { user, isAdmin } = useAuth();
@@ -166,7 +168,7 @@ export default function EditShop() {
     <div className="pb-16">
       {/* Header */}
       <div className="px-4 pt-6 pb-2 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full card flex items-center justify-center">
+        <button onClick={() => goBack(navigate, '/')} className="w-9 h-9 rounded-full card flex items-center justify-center">
           <ArrowLeft size={16} />
         </button>
         <div>

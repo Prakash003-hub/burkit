@@ -20,9 +20,7 @@ export default function Market() {
 
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState(searchParams.get('category') || '');
-  const [selectedArea, setSelectedArea] = useState(
-    user?.area || user?.villageName || BURKIT_AREAS[9]
-  );
+  const [selectedArea, setSelectedArea] = useState('All');
   const [district, setDistrict] = useState('');
   const [sortBy, setSortBy] = useState('latest'); // 'latest' | 'popular'
   const [showDistrictFilter, setShowDistrictFilter] = useState(false);
@@ -82,7 +80,7 @@ export default function Market() {
             onChange={(e) => setSelectedArea(e.target.value)}
             className="input text-xs font-extrabold !py-1.5 !px-2.5 rounded-xl bg-cloud-100 dark:bg-ink-700 text-ink-900 dark:text-cloud-100 border-none hover:border-orange-400 cursor-pointer max-w-[230px] truncate"
           >
-            {isAdmin && <option value="All">🌐 All Areas (அனைத்து பகுதிகள்)</option>}
+            <option value="All">🌐 All Areas (அனைத்து பகுதிகள்)</option>
             {BURKIT_AREAS.map((a) => (
               <option key={a} value={a}>
                 📍 {a}

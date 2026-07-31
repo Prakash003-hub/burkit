@@ -10,6 +10,7 @@ import Loader from '../components/Loader.jsx';
 import { openDirectWhatsApp } from '../utils/whatsapp.js';
 import { GROCERY_SUBCATEGORIES } from '../data/groceryDefaults.js';
 import { calculateScaledPrice, calculateQuantityFromAmount } from '../utils/priceCalculator.js';
+import { goBack } from '../utils/navigation.js';
 
 function buildScaleOptions(product) {
   const sub = String(product.subCategory || '').toLowerCase();
@@ -267,7 +268,7 @@ export default function ShopDetails() {
       {/* Top Bar Header */}
       <div className="px-4 pt-5 pb-3 flex items-center justify-between">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => goBack(navigate, '/')}
           className="w-10 h-10 rounded-full card flex items-center justify-center shadow-sm hover:scale-105 transition-transform"
         >
           <ArrowLeft size={18} />

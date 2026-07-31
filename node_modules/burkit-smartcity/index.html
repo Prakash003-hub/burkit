@@ -7,13 +7,14 @@
     
     <!-- PWA Web App Manifest -->
     <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="alternate icon" type="image/png" href="/logo.png" />
     
     <!-- iOS / Apple Mobile PWA Metadata -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="BurkitCity" />
-    <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.svg" />
 
     <title>BurKIt Smartcity - Burkitmanagaram Nearby Areas Service</title>
     
@@ -21,12 +22,45 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="background-color: #09090b; margin: 0; padding: 0;">
+    <div id="root">
+      <!-- PWA Mobile App Startup Splash Screen (Replaced automatically when React mounts) -->
+      <div id="pwa-splash" style="position:fixed;inset:0;background:linear-gradient(135deg, #09090b 0%, #18181b 50%, #09090b 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:'Poppins', sans-serif;color:#ffffff;text-align:center;padding:24px;">
+        <!-- Glowing Logo Badge -->
+        <div style="width:110px;height:110px;border-radius:28px;background:linear-gradient(135deg, #ea580c, #f97316);display:flex;align-items:center;justify-content:center;box-shadow:0 20px 40px rgba(234, 88, 12, 0.4), 0 0 50px rgba(249, 115, 22, 0.25);margin-bottom:24px;position:relative;animation:splashPulse 2s infinite ease-in-out;">
+          <img src="/logo.svg" alt="BurKIt Smartcity Logo" style="width:75px;height:75px;object-fit:contain;" />
+        </div>
+
+        <!-- App Title -->
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px;margin:0 0 6px 0;background:linear-gradient(to right, #ffffff, #fdba74);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+          BurKIt Smartcity
+        </h1>
+        <p style="font-size:12px;color:#a1a1aa;font-weight:600;margin:0 0 32px 0;">
+          பர்கிட் மாநகரம் &amp; சுற்றியுள்ள பகுதிகள்
+        </p>
+
+        <!-- Animated Progress Indicator -->
+        <div style="width:140px;height:4px;background:rgba(255,255,255,0.12);border-radius:10px;overflow:hidden;position:relative;">
+          <div style="position:absolute;top:0;left:0;bottom:0;width:50%;background:linear-gradient(90deg, #ea580c, #fb923c);border-radius:10px;animation:splashLoading 1.2s infinite ease-in-out;"></div>
+        </div>
+
+        <style>
+          @keyframes splashLoading {
+            0% { left: -50%; width: 50%; }
+            50% { left: 25%; width: 70%; }
+            100% { left: 100%; width: 50%; }
+          }
+          @keyframes splashPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.04); }
+          }
+        </style>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
