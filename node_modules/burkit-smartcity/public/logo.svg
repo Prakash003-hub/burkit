@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <style>
+      .bg-orange { fill: #f97316; }
+      .bg-dark { fill: #27272a; }
+      .stroke-orange { stroke: #f97316; stroke-width: 8; fill: #ffffff; }
+      .text-white { fill: #ffffff; font-family: system-ui, -apple-system, sans-serif; font-weight: 900; }
+      .text-orange { fill: #f97316; font-family: system-ui, -apple-system, sans-serif; font-weight: 900; }
+    </style>
+  </defs>
+
+  <!-- Left Face (Orange) -->
+  <path d="M 60,170 Q 60,150 78,140 L 235,55 Q 248,48 248,65 L 248,260 Q 248,272 235,278 L 78,365 Q 60,375 60,355 Z" class="bg-orange" />
+
+  <!-- Wifi Icon on Left Face -->
+  <g transform="translate(200, 75) scale(0.65)" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M -15, -5 A 20,20 0 0,1 15,-5" />
+    <path d="M -25, -15 A 32,32 0 0,1 25,-15" />
+    <circle cx="0" cy="5" r="3" fill="#ffffff" />
+  </g>
+
+  <!-- B Text on Left Face -->
+  <text x="140" y="240" font-size="120" text-anchor="middle" class="text-white" transform="skewY(22) scale(0.85, 1)">B</text>
+
+  <!-- Right Face (White with Orange Border) -->
+  <path d="M 252,65 Q 252,48 265,55 L 422,140 Q 440,150 440,170 L 440,355 Q 440,375 422,365 L 265,278 Q 252,272 252,260 Z" class="stroke-orange" />
+
+  <!-- K Text on Right Face -->
+  <text x="350" y="110" font-size="120" text-anchor="middle" class="text-orange" transform="skewY(-22) scale(0.85, 1)">K</text>
+
+  <!-- Bottom Face (Dark Grey/Black) -->
+  <path d="M 78,370 L 235,283 Q 248,276 261,283 L 422,370 Q 435,378 422,388 L 261,475 Q 248,482 235,475 L 78,388 Q 65,378 78,370 Z" class="bg-dark" />
+
+  <!-- M Text on Bottom Face -->
+  <text x="250" y="470" font-size="110" text-anchor="middle" class="text-white" transform="rotate(-30, 250, 420) skewX(40) scale(1, 0.7)">M</text>
+</svg>

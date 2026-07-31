@@ -1,0 +1,11 @@
+{
+  "name": "burkit-smartcity-root",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build"
+  }
+}
