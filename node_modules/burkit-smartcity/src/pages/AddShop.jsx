@@ -8,7 +8,7 @@ import { BURKIT_AREAS } from '../data/areaDefaults.js';
 import { compressImage } from '../utils/imageCompressor.js';
 
 export default function AddShop() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
@@ -50,9 +50,12 @@ export default function AddShop() {
 
     setSaving(true);
     try {
+      const effectiveUserId = user?.userId || (user?.mobile ? `USR_${user.mobile}` : `USR_${form.whatsappNo.trim()}`);
+      const effectiveOwnerName = user?.name || form.shopName.trim();
+
       await api.createShop({
-        ownerUserId: user?.userId || 'USR_GUEST',
-        ownerName: user?.name || 'Shop Owner',
+        ownerUserId: effectiveUserId,
+        ownerName: effectiveOwnerName,
         shopName: form.shopName.trim(),
         whatsappNo: form.whatsappNo.trim(),
         category: form.category,
@@ -61,12 +64,17 @@ export default function AddShop() {
         description: form.description.trim(),
         shopPhoto: form.shopPhoto,
         populateDefaults: form.category === 'Grocery' ? form.populateDefaults : false,
-        status: 'Pending',
+        status: 'Approved',
       });
 
-      alert('உங்கள் கடை வெற்றிகரமாக பதிவு செய்யப்பட்டது! நிர்வாகி ஒப்புதலுக்கு அனுப்பப்பட்டுள்ளது (Sent for Admin Approval).');
-      navigate('/my-shops');
+      // Navigate immediately — grocery catalog loads in background
+      navigate('/my-shops', {
+        state: {
+          successMsg: '✅ உங்கள் கடை வெற்றிகரமாக பதிவு செய்யப்பட்டது!'
+        }
+      });
     } catch (err) {
+      console.error('Failed to create shop:', err);
       setError(err.message || 'Failed to create shop');
     } finally {
       setSaving(false);
@@ -145,7 +153,14 @@ export default function AddShop() {
           <select
             className="input mt-1 text-sm font-bold"
             value={form.category}
-            onChange={(e) => update('category', e.target.value)}
+            onChange={(e) => {
+              const selectedCategory = e.target.value;
+              setForm((f) => ({
+                ...f,
+                category: selectedCategory,
+                populateDefaults: selectedCategory === 'Grocery',
+              }));
+            }}
           >
             {SHOP_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
@@ -224,10 +239,19 @@ export default function AddShop() {
         <button
           type="submit"
           disabled={saving}
-          className="btn-primary w-full py-3.5 text-sm font-extrabold flex items-center justify-center gap-2 shadow-lg"
+          className="btn-primary w-full py-3.5 text-sm font-extrabold flex items-center justify-center gap-2 shadow-lg disabled:opacity-75"
         >
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <Store size={18} />}
-          Register Shop
+          {saving ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              <span>Google Sheet-ல் சேமிக்கப்படுகிறது...</span>
+            </>
+          ) : (
+            <>
+              <Store size={18} />
+              <span>Register Shop (கடையைப் பதிவு செய்)</span>
+            </>
+          )}
         </button>
       </form>
     </div>

@@ -22,18 +22,43 @@ export default function Home() {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([
-      api.getProducts({}),
-      api.getCategories(),
-    ])
-      .then(([p, c]) => {
+
+    // Load products with SWR (instant from IndexedDB, background sync from server)
+    api.getProductsSWR({}, (freshProducts) => {
+      if (mounted && Array.isArray(freshProducts)) {
+        setProducts(freshProducts);
+      }
+    })
+      .then((initial) => {
         if (!mounted) return;
-        setProducts(p);
-        setCategories(c);
+        if (Array.isArray(initial) && initial.length > 0) {
+          setProducts(initial);
+          setLoading(false); // Instant display
+        }
+      })
+      .catch(() => {});
+
+    // Load categories with SWR
+    api.getCategoriesSWR((freshCategories) => {
+      if (mounted && Array.isArray(freshCategories)) {
+        setCategories(freshCategories);
+      }
+    })
+      .then((initial) => {
+        if (!mounted) return;
+        if (Array.isArray(initial) && initial.length > 0) {
+          setCategories(initial);
+          setLoading(false);
+        }
       })
       .catch(() => {})
-      .finally(() => mounted && setLoading(false));
-    return () => (mounted = false);
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const isJobOrService = (catName) =>

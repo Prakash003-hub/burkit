@@ -35,14 +35,26 @@ export default function ProductDetails() {
   );
 
   useEffect(() => {
-    api
-      .getProduct(id)
-      .then((p) => {
-        setProduct(p);
-        setLikeCount(Number(p.likeCount || 0));
+    let mounted = true;
+
+    api.getProductSWR(id, (freshProduct) => {
+      if (mounted && freshProduct) {
+        setProduct(freshProduct);
+        setLikeCount(Number(freshProduct.likeCount || 0));
+      }
+    })
+      .then((initial) => {
+        if (!mounted) return;
+        if (initial) {
+          setProduct(initial);
+          setLikeCount(Number(initial.likeCount || 0));
+          setLoading(false);
+        }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
     if (user?.userId) {
       api.getUserLikes(user.userId).then((likedIds) => {

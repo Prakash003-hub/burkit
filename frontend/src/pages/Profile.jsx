@@ -15,8 +15,6 @@ export default function Profile() {
     { icon: Download, label: 'Install Mobile App (செயலியை நிறுவவும்)', to: '#install', isInstall: true },
     { icon: Store, label: 'My Shops (என் கடைகள்)', to: '/my-shops' },
     { icon: Package, label: 'My Products', to: '/my-products' },
-    { icon: MessageSquareText, label: 'My Sale Requests (Seller)', to: '/my-sale-requests' },
-    { icon: ShoppingBag, label: 'My Purchase Requests (Buyer)', to: '/my-purchase-requests' },
     { icon: Store, label: 'Register New Shop', to: '/add-shop' },
     { icon: PlusCircle, label: 'Add Product', to: '/add-product' },
     { icon: Bookmark, label: 'Saved Products', to: '/profile' },
@@ -26,7 +24,6 @@ export default function Profile() {
   if (isAdmin) {
     menu.push({ icon: ShieldCheck, label: 'Admin Dashboard', to: '/admin' });
     menu.push({ icon: Layers, label: 'Manage Categories', to: '/admin/categories' });
-    menu.push({ icon: FileText, label: 'Sale Request Records', to: '/admin/sale-requests' });
   }
 
   return (

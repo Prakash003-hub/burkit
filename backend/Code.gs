@@ -842,7 +842,17 @@ function listShops(params) {
     shops = shops.filter(function (s) { return String(s.category).toLowerCase() === String(params.category).toLowerCase(); });
   }
   if (params.ownerUserId) {
-    shops = shops.filter(function (s) { return String(s.ownerUserId) === String(params.ownerUserId); });
+    shops = shops.filter(function (s) {
+      return (
+        String(s.ownerUserId) === String(params.ownerUserId) ||
+        (params.mobile && String(s.whatsappNo) === String(params.mobile)) ||
+        (params.mobile && String(s.ownerUserId) === 'USR_' + params.mobile)
+      );
+    });
+  } else if (params.mobile) {
+    shops = shops.filter(function (s) {
+      return String(s.whatsappNo) === String(params.mobile);
+    });
   }
   return shops;
 }
@@ -871,8 +881,8 @@ function createShop(body) {
 
   const newShop = {
     shopId: shopId,
-    ownerUserId: body.ownerUserId || '',
-    ownerName: body.ownerName || '',
+    ownerUserId: body.ownerUserId || (body.whatsappNo ? 'USR_' + body.whatsappNo : ''),
+    ownerName: body.ownerName || 'Shop Owner',
     shopName: body.shopName,
     whatsappNo: body.whatsappNo,
     shopPhoto: photoUrl,
@@ -880,7 +890,7 @@ function createShop(body) {
     villageName: body.villageName || '',
     category: body.category || 'Grocery',
     likeCount: 0,
-    status: body.status || 'Pending',
+    status: body.status || 'Approved',
     createdAt: now,
     updatedAt: now,
   };
@@ -924,19 +934,19 @@ function listShopProducts(params) {
 }
 
 function createShopProduct(body) {
-  if (!body.shopId || !body.productName) throw new Error('shopId and productName are required');
-  const productId = generateId('SP');
+  if (!body.shopId || (!body.productName && !body.tamilName)) throw new Error('shopId and productName are required');
+  const productId = body.productId || generateId('SP');
   const now = new Date().toISOString();
   const newItem = {
     productId: productId,
     shopId: body.shopId,
-    productName: body.productName,
-    tamilName: body.tamilName || '',
+    productName: body.productName || body.tamilName,
+    tamilName: body.tamilName || body.productName || '',
     subCategory: body.subCategory || 'General',
     unitScale: body.unitScale || '1Kg',
     availableScales: Array.isArray(body.availableScales) ? body.availableScales.join(',') : (body.availableScales || '250g,500g,1Kg'),
     price: body.price || '',
-    inStock: body.inStock !== false ? 'true' : 'false',
+    inStock: (body.inStock !== false && body.inStock !== 'false') ? 'true' : 'false',
     createdAt: now,
     updatedAt: now,
   };
@@ -949,8 +959,16 @@ function updateShopProduct(body) {
   const patch = Object.assign({}, body);
   patch.updatedAt = new Date().toISOString();
   if (Array.isArray(patch.availableScales)) patch.availableScales = patch.availableScales.join(',');
-  if (patch.inStock !== undefined) patch.inStock = patch.inStock !== false ? 'true' : 'false';
-  updateRowById(SHEETS.SHOP_PRODUCTS, 'productId', body.productId, patch);
+  if (patch.inStock !== undefined) patch.inStock = (patch.inStock !== false && patch.inStock !== 'false') ? 'true' : 'false';
+
+  const found = findRowIndexById(SHEETS.SHOP_PRODUCTS, 'productId', body.productId);
+  if (!found) {
+    if (body.shopId && (body.productName || body.tamilName)) {
+      return createShopProduct(body);
+    }
+  } else {
+    updateRowById(SHEETS.SHOP_PRODUCTS, 'productId', body.productId, patch);
+  }
   return { success: true };
 }
 
@@ -1037,8 +1055,13 @@ function populateShopDefaults(body) {
   ];
 
   const now = new Date().toISOString();
-  defaults.forEach(function (item) {
-    const newItem = {
+  const sheet = getSheet(SHEETS.SHOP_PRODUCTS);
+  const headers = HEADERS[SHEETS.SHOP_PRODUCTS];
+
+  // Build all rows as a 2D array and write in ONE batch call
+  // (much faster than 37 individual appendRow calls - drops time from ~11s to <1s)
+  const rows = defaults.map(function (item) {
+    const obj = {
       productId: generateId('SP'),
       shopId: shopId,
       productName: item.productName,
@@ -1051,7 +1074,12 @@ function populateShopDefaults(body) {
       createdAt: now,
       updatedAt: now,
     };
-    appendRowFromObject(SHEETS.SHOP_PRODUCTS, newItem);
+    return headers.map(function (h) { return obj[h] !== undefined ? obj[h] : ''; });
   });
+
+  // Single batch write
+  var lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow + 1, 1, rows.length, headers.length).setValues(rows);
+
   return { success: true, count: defaults.length };
 }

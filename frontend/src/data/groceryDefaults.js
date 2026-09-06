@@ -367,3 +367,81 @@ export const SHOP_CATEGORIES = [
   'Studios',
   'Others',
 ];
+
+/**
+ * Merges frontend default grocery items with backend items from Google Sheet.
+ * - If shop is NOT Grocery: Hides all grocery defaults; only returns actual custom items.
+ * - If shop IS Grocery: Returns all default Tamil grocery items instantly from frontend,
+ *   merged with any updated prices/stock or new items saved in Google Sheet.
+ */
+export function getMergedShopProducts(shopId, category, backendProducts = []) {
+  const isGrocery = category === 'Grocery';
+  const backendList = Array.isArray(backendProducts) ? backendProducts : [];
+
+  if (!isGrocery) {
+    // Non-grocery shops: hide any default grocery items
+    return backendList.filter(
+      (p) => String(p.shopId) === String(shopId) && !String(p.productId || '').startsWith(`SP_${shopId}_`)
+    );
+  }
+
+  // Map backend products by productId and by normalized name
+  const backendMap = new Map();
+  const deletedSet = new Set(
+    backendList
+      .filter((p) => p.deleted === true || p.inStock === 'deleted' || p.inStock === false && p.price === 'deleted')
+      .map((p) => String(p.productId))
+  );
+
+  backendList.forEach((p) => {
+    if (p.productId) backendMap.set(String(p.productId), p);
+    const key = (p.tamilName || p.productName || '').trim().toLowerCase();
+    if (key) backendMap.set(key, p);
+  });
+
+  // Base list populated instantly from frontend default items
+  const defaultItems = GROCERY_DEFAULT_ITEMS.map((item, idx) => {
+    const defaultId = `SP_${shopId}_${idx + 1}`;
+    if (deletedSet.has(defaultId)) return null;
+
+    const nameKey = (item.tamilName || item.productName || '').trim().toLowerCase();
+    const existing = backendMap.get(defaultId) || backendMap.get(nameKey);
+
+    if (existing) {
+      return {
+        ...item,
+        tamilName: item.tamilName || item.productName,
+        unitScale: item.defaultScale || '1Kg',
+        ...existing,
+        isDefault: true,
+      };
+    }
+
+    return {
+      productId: defaultId,
+      shopId: shopId,
+      productName: item.productName,
+      tamilName: item.tamilName || item.productName,
+      subCategory: item.subCategory,
+      unitScale: item.defaultScale || '1Kg',
+      availableScales: item.availableScales || ['250g', '500g', '1Kg'],
+      price: item.price || '',
+      inStock: item.inStock !== false && item.inStock !== 'false',
+      isDefault: true,
+      isFrontendDefault: true,
+    };
+  }).filter(Boolean);
+
+  // Any more/additional products added by the user into Google Sheet beyond default catalog
+  const defaultNameKeys = new Set(
+    GROCERY_DEFAULT_ITEMS.map((i) => (i.tamilName || i.productName || '').trim().toLowerCase())
+  );
+  const extraProducts = backendList.filter((p) => {
+    const key = (p.tamilName || p.productName || '').trim().toLowerCase();
+    const isDefId = String(p.productId || '').startsWith(`SP_${shopId}_`);
+    return !defaultNameKeys.has(key) && !isDefId;
+  });
+
+  return [...defaultItems, ...extraProducts];
+}
+

@@ -26,24 +26,44 @@ export default function Market() {
   const [showDistrictFilter, setShowDistrictFilter] = useState(false);
 
   useEffect(() => {
-    api.getCategories().then(setCategories).catch(() => {});
+    api.getCategoriesSWR(setCategories)
+      .then((initialCats) => {
+        if (initialCats && Array.isArray(initialCats)) setCategories(initialCats);
+      })
+      .catch(() => {});
+
     if (user?.userId) {
       api.getUserLikes(user.userId).then(setUserLikedIds).catch(() => {});
     }
   }, [user?.userId]);
 
   useEffect(() => {
-    setLoading(true);
+    let mounted = true;
     const params = { sortBy };
     if (query) params.q = query;
     if (category) params.category = category;
     if (district) params.district = district;
 
-    api
-      .getProducts(params)
-      .then(setProducts)
+    api.getProductsSWR(params, (freshProducts) => {
+      if (mounted && Array.isArray(freshProducts)) {
+        setProducts(freshProducts);
+      }
+    })
+      .then((initial) => {
+        if (!mounted) return;
+        if (Array.isArray(initial) && initial.length > 0) {
+          setProducts(initial);
+          setLoading(false);
+        }
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [query, category, district, sortBy]);
 
   const isJobOrService = (name) => ['jobs', 'services'].includes(String(name || '').trim().toLowerCase());

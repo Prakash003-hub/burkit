@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Pencil, Trash2, X, Check, ImagePlus, Loader2, Store, AlertTriangle, Sparkles } from 'lucide-react';
 import api from '../api/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import Loader from '../components/Loader.jsx';
-import { SHOP_CATEGORIES, GROCERY_SUBCATEGORIES } from '../data/groceryDefaults.js';
+import { SHOP_CATEGORIES, GROCERY_SUBCATEGORIES, getMergedShopProducts } from '../data/groceryDefaults.js';
 import { BURKIT_AREAS } from '../data/areaDefaults.js';
 
 import { goBack } from '../utils/navigation.js';
@@ -96,8 +96,8 @@ export default function EditShop() {
     setItemForm({
       productName: '',
       tamilName: '',
-      subCategory: 'General',
-      unitScale: '1Kg',
+      subCategory: shop?.category === 'Grocery' ? 'Vegetables (காய்கறிகள்)' : 'General',
+      unitScale: shop?.category === 'Grocery' ? '1Kg' : '1 Pc',
       price: '',
       inStock: true,
     });
@@ -117,6 +117,10 @@ export default function EditShop() {
     setIsProductModalOpen(true);
   }
 
+  const visibleProducts = useMemo(() => {
+    return getMergedShopProducts(id, shop?.category, products);
+  }, [id, shop?.category, products]);
+
   async function handleSaveProduct(e) {
     e.preventDefault();
     const name = (itemForm.tamilName || itemForm.productName).trim();
@@ -130,7 +134,8 @@ export default function EditShop() {
 
     setItemSaving(true);
     try {
-      if (editingItem) {
+      const existsInBackend = products.some((p) => String(p.productId) === String(editingItem?.productId));
+      if (editingItem && existsInBackend) {
         await api.updateShopProduct({
           productId: editingItem.productId,
           shopId: shop.shopId,
@@ -138,6 +143,7 @@ export default function EditShop() {
         });
       } else {
         await api.createShopProduct({
+          productId: editingItem?.productId,
           shopId: shop.shopId,
           ...payload,
         });
@@ -154,7 +160,22 @@ export default function EditShop() {
   async function handleDeleteProduct(item) {
     if (!confirm(`Are you sure you want to delete "${item.productName}"?`)) return;
     try {
-      await api.deleteShopProduct(item.productId);
+      const existsInBackend = products.some((p) => String(p.productId) === String(item.productId));
+      if (existsInBackend) {
+        await api.deleteShopProduct(item.productId, shop.shopId);
+      } else {
+        await api.createShopProduct({
+          productId: item.productId,
+          shopId: shop.shopId,
+          productName: item.productName,
+          tamilName: item.tamilName || item.productName,
+          subCategory: item.subCategory,
+          unitScale: item.unitScale,
+          deleted: true,
+          inStock: false,
+          price: 'deleted',
+        });
+      }
       load();
     } catch (err) {
       alert(err.message || 'Failed to delete product');
@@ -269,7 +290,7 @@ export default function EditShop() {
       <div className="px-4 mt-4 flex items-center justify-between">
         <div>
           <h2 className="font-display font-bold text-lg text-ink-900 dark:text-cloud-100">
-            Shop Products Catalog ({products.length})
+            Shop Products Catalog ({visibleProducts.length})
           </h2>
           <p className="text-xs text-ink-700/60 dark:text-cloud-100/60">Add, edit, or remove items in this store</p>
         </div>
@@ -299,7 +320,7 @@ export default function EditShop() {
 
       {/* Shop Products List */}
       <div className="px-4 mt-3 space-y-2.5">
-        {products.length === 0 ? (
+        {visibleProducts.length === 0 ? (
           <div className="card p-6 text-center text-xs text-ink-700/50 space-y-3">
             <p>No products added yet.</p>
             {shop.category === 'Grocery' && (
@@ -315,7 +336,7 @@ export default function EditShop() {
             )}
           </div>
         ) : (
-          products.map((p) => (
+          visibleProducts.map((p) => (
             <div key={p.productId} className="card p-3 flex items-center justify-between gap-2 rounded-2xl">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 truncate">
@@ -376,10 +397,22 @@ export default function EditShop() {
                     value={itemForm.subCategory}
                     onChange={(e) => setItemForm({ ...itemForm, subCategory: e.target.value })}
                   >
-                    {GROCERY_SUBCATEGORIES.filter((c) => c !== 'All').map((sub) => (
-                      <option key={sub} value={sub}>{sub}</option>
-                    ))}
-                    <option value="General">General</option>
+                    {shop?.category === 'Grocery' ? (
+                      <>
+                        {GROCERY_SUBCATEGORIES.filter((c) => c !== 'All').map((sub) => (
+                          <option key={sub} value={sub}>{sub}</option>
+                        ))}
+                        <option value="General">General</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="General">General (பொதுவானது)</option>
+                        <option value="Products">Products (பொருட்கள்)</option>
+                        <option value="Services">Services (சேவைகள்)</option>
+                        <option value="Items">Items</option>
+                        <option value="Offers">Special Offers</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
@@ -387,39 +420,45 @@ export default function EditShop() {
                   <label className="text-xs font-bold">Default Scale / Unit</label>
                   <select
                     className="input mt-1 text-xs font-semibold"
-                    value={itemForm.unitScale || '1Kg'}
+                    value={itemForm.unitScale || (shop?.category === 'Grocery' ? '1Kg' : '1 Pc')}
                     onChange={(e) => setItemForm({ ...itemForm, unitScale: e.target.value })}
                   >
-                    {itemForm.unitScale && !['50g','100g','250g','500g','750g','1Kg','1.5Kg','2Kg','5Kg','100ml','250ml','500ml','1 Litre','2 Litre','5 Litre','1 Pc','1 Packet','1 Box','1 Set'].includes(itemForm.unitScale) && (
+                    {itemForm.unitScale && !['50g','100g','250g','500g','750g','1Kg','1.5Kg','2Kg','5Kg','100ml','250ml','500ml','1 Litre','2 Litre','5 Litre','1 Pc','1 Packet','1 Box','1 Set','1 Unit','Per Hour'].includes(itemForm.unitScale) && (
                       <option value={itemForm.unitScale}>{itemForm.unitScale}</option>
                     )}
 
-                    <optgroup label="Weight (எடை)">
-                      <option value="50g">50g</option>
-                      <option value="100g">100g</option>
-                      <option value="250g">250g</option>
-                      <option value="500g">500g</option>
-                      <option value="750g">750g</option>
-                      <option value="1Kg">1Kg</option>
-                      <option value="1.5Kg">1.5Kg</option>
-                      <option value="2Kg">2Kg</option>
-                      <option value="5Kg">5Kg</option>
-                    </optgroup>
+                    {shop?.category === 'Grocery' && (
+                      <>
+                        <optgroup label="Weight (எடை)">
+                          <option value="50g">50g</option>
+                          <option value="100g">100g</option>
+                          <option value="250g">250g</option>
+                          <option value="500g">500g</option>
+                          <option value="750g">750g</option>
+                          <option value="1Kg">1Kg</option>
+                          <option value="1.5Kg">1.5Kg</option>
+                          <option value="2Kg">2Kg</option>
+                          <option value="5Kg">5Kg</option>
+                        </optgroup>
 
-                    <optgroup label="Liquid (திரவம் / எண்ணெய்)">
-                      <option value="100ml">100ml</option>
-                      <option value="250ml">250ml</option>
-                      <option value="500ml">500ml</option>
-                      <option value="1 Litre">1 Litre</option>
-                      <option value="2 Litre">2 Litre</option>
-                      <option value="5 Litre">5 Litre</option>
-                    </optgroup>
+                        <optgroup label="Liquid (திரவம் / எண்ணெய்)">
+                          <option value="100ml">100ml</option>
+                          <option value="250ml">250ml</option>
+                          <option value="500ml">500ml</option>
+                          <option value="1 Litre">1 Litre</option>
+                          <option value="2 Litre">2 Litre</option>
+                          <option value="5 Litre">5 Litre</option>
+                        </optgroup>
+                      </>
+                    )}
 
-                    <optgroup label="Count / Pack (எண்ணிக்கை)">
+                    <optgroup label="Count / Units (எண்ணிக்கை / அலகு)">
                       <option value="1 Pc">1 Pc (ஒன்று)</option>
+                      <option value="1 Unit">1 Unit (அலகு)</option>
                       <option value="1 Packet">1 Packet (பாக்கெட்)</option>
                       <option value="1 Box">1 Box (பெட்டி)</option>
                       <option value="1 Set">1 Set (செட்)</option>
+                      <option value="Per Hour">Per Hour (ஒரு மணி நேரம்)</option>
                     </optgroup>
                   </select>
                 </div>

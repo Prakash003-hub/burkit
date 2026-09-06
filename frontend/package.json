@@ -1,4 +1,14 @@
 {
+<<<<<<< HEAD
+  "name": "burkit-smartcity-root",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build"
+=======
   "name": "burkit-smartcity",
   "private": true,
   "version": "1.0.0",
@@ -21,5 +31,6 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "vite": "^5.4.8"
+>>>>>>> bcc1919 (vdbuhvbfsbdhvhhi)
   }
 }

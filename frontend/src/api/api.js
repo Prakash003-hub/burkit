@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { GROCERY_DEFAULT_ITEMS } from '../data/groceryDefaults.js';
+import idbStorage from '../utils/idbStorage.js';
 
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbx1R1N5s03V0XULHcRo90l3JB_nXJPoEoB5wECqZBotAjsaCf3Npxr2lVqGQF6aXjrs/exec';
 const API_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
@@ -26,9 +27,88 @@ export function subscribeToApiLoading(callback) {
   return () => loadingListeners.delete(callback);
 }
 
+// Persist data into IndexedDB cache (and local entities) safely
+async function saveBackendDataToCache(action, params, data) {
+  if (data === undefined || data === null) return;
+  try {
+    const cacheKey = `idb_cache_${action}_${JSON.stringify(params || {})}`;
+    await idbStorage.setCache(cacheKey, data);
+
+    // Synchronize to entity lists if applicable
+    if (action === 'products' && Array.isArray(data)) {
+      saveLocalProducts(data);
+    } else if (action === 'shops' && Array.isArray(data)) {
+      saveLocalShops(data);
+    }
+  } catch (err) {
+    console.warn('Error persisting data to IndexedDB:', err);
+  }
+}
+
+// Stale-While-Revalidate: Returns cached data immediately, then validates with backend
+export async function getWithSWR(action, params = {}, onFreshData = null) {
+  const cacheKey = `idb_cache_${action}_${JSON.stringify(params || {})}`;
+
+  // 1. Immediately read from persistent IndexedDB
+  let cachedData = null;
+  try {
+    cachedData = await idbStorage.getCache(cacheKey);
+  } catch (e) {
+    console.warn('Error reading from IndexedDB cache:', e);
+  }
+
+  // Fallback to local entities if not found in IndexedDB
+  if (!cachedData) {
+    try {
+      const localResult = await localGet(action, params);
+      if (localResult && (Array.isArray(localResult) ? localResult.length > 0 : true)) {
+        cachedData = localResult;
+      }
+    } catch {}
+  }
+
+  // 2. Background Revalidation (fetch fresh data from backend)
+  const fetchFresh = async () => {
+    activeRequestsCount++;
+    notifyLoadingListeners();
+    try {
+      if (!API_URL) {
+        return cachedData;
+      }
+      const res = await client.get('', { params: { action, ...params } });
+      if (res.data && res.data.success && res.data.data !== undefined) {
+        const freshData = res.data.data;
+        // ONLY replace cache when fresh backend data is successfully received
+        await saveBackendDataToCache(action, params, freshData);
+        if (typeof onFreshData === 'function') {
+          onFreshData(freshData);
+        }
+        return freshData;
+      }
+    } catch (err) {
+      console.warn(`Background SWR revalidation failed for ${action}:`, err.message);
+    } finally {
+      activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+      notifyLoadingListeners();
+    }
+    return cachedData;
+  };
+
+  // Free Load: If cached data is available, return immediately & trigger background fetch
+  if (cachedData !== null && cachedData !== undefined) {
+    fetchFresh(); // Fire and forget in background
+    return cachedData;
+  }
+
+  // If no cached data exists, wait for network
+  return await fetchFresh();
+}
+
 async function get(action, params = {}) {
   activeRequestsCount++;
   notifyLoadingListeners();
+  const cacheKey = `idb_cache_${action}_${JSON.stringify(params || {})}`;
+
   if (!API_URL) {
     try {
       return await localGet(action, params);
@@ -40,9 +120,15 @@ async function get(action, params = {}) {
   try {
     const res = await client.get('', { params: { action, ...params } });
     if (!res.data || !res.data.success) throw new Error((res.data && res.data.error) || 'Request failed');
+    // Save to persistent IndexedDB cache on success
+    saveBackendDataToCache(action, params, res.data.data);
     return res.data.data;
   } catch (err) {
     console.warn(`API get error (${action}), falling back to local handler:`, err.message);
+    const cached = await idbStorage.getCache(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
     return localGet(action, params);
   } finally {
     activeRequestsCount = Math.max(0, activeRequestsCount - 1);
@@ -64,14 +150,11 @@ async function post(action, body = {}) {
   try {
     const res = await axios.post(`${API_URL}?action=${action}`, JSON.stringify(body), {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      timeout: 20000,
     });
     if (!res.data || !res.data.success) throw new Error((res.data && res.data.error) || 'Request failed');
     return res.data.data;
   } catch (err) {
-    // If the API server returned an explicit error (e.g. function missing in GAS), throw it so the UI alerts the user
-    if (err.message && !err.message.includes('Network Error') && !err.message.includes('Failed to fetch')) {
-      throw err;
-    }
     console.warn(`API post error (${action}), falling back to local handler:`, err.message);
     return localPost(action, body);
   } finally {
@@ -197,7 +280,11 @@ function localGet(action, params = {}) {
       result = result.filter((s) => String(s.category).toLowerCase() === String(params.category).toLowerCase());
     }
     if (params.ownerUserId) {
-      result = result.filter((s) => String(s.ownerUserId) === String(params.ownerUserId));
+      result = result.filter(
+        (s) =>
+          String(s.ownerUserId) === String(params.ownerUserId) ||
+          (params.mobile && String(s.whatsappNo) === String(params.mobile))
+      );
     }
     return Promise.resolve(result);
   }
@@ -212,6 +299,11 @@ function localGet(action, params = {}) {
     let result = [...shopProducts];
     if (params.shopId) {
       result = result.filter((p) => String(p.shopId) === String(params.shopId));
+      const targetShop = shops.find((s) => String(s.shopId) === String(params.shopId));
+      // If shop is not Grocery, default grocery items are hidden
+      if (targetShop && targetShop.category !== 'Grocery') {
+        result = result.filter((p) => !String(p.productId || '').startsWith(`SP_${params.shopId}_`));
+      }
     }
     return Promise.resolve(result);
   }
@@ -414,7 +506,7 @@ function localPost(action, body = {}) {
     saveLocalShops(shops);
 
     // If Grocery shop, auto populate default Tamil items into shopProducts!
-    if (body.category === 'Grocery' && body.populateDefaults !== false) {
+    if (body.category === 'Grocery' && body.populateDefaults === true) {
       const defaultProducts = GROCERY_DEFAULT_ITEMS.map((item, idx) => ({
         productId: `SP_${shopId}_${idx + 1}`,
         shopId: shopId,
@@ -481,15 +573,15 @@ function localPost(action, body = {}) {
 
   if (action === 'shop-product-create') {
     const newItem = {
-      productId: `SP_${Date.now()}`,
+      productId: body.productId || `SP_${Date.now()}`,
       shopId: body.shopId,
-      productName: body.productName,
-      tamilName: body.tamilName || '',
+      productName: body.productName || body.tamilName,
+      tamilName: body.tamilName || body.productName || '',
       subCategory: body.subCategory || 'General',
       unitScale: body.unitScale || '1Kg',
       availableScales: body.availableScales || ['250g', '500g', '1Kg'],
       price: body.price || '',
-      inStock: body.inStock !== false,
+      inStock: body.inStock !== false && body.inStock !== 'false',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -503,8 +595,25 @@ function localPost(action, body = {}) {
     if (idx !== -1) {
       shopProducts[idx] = { ...shopProducts[idx], ...body, updatedAt: new Date().toISOString() };
       saveLocalShopProducts(shopProducts);
+      return Promise.resolve(shopProducts[idx]);
+    } else {
+      const newItem = {
+        productId: body.productId || `SP_${Date.now()}`,
+        shopId: body.shopId,
+        productName: body.productName || body.tamilName,
+        tamilName: body.tamilName || body.productName || '',
+        subCategory: body.subCategory || 'General',
+        unitScale: body.unitScale || '1Kg',
+        availableScales: body.availableScales || ['250g', '500g', '1Kg'],
+        price: body.price || '',
+        inStock: body.inStock !== false && body.inStock !== 'false',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      shopProducts.unshift(newItem);
+      saveLocalShopProducts(shopProducts);
+      return Promise.resolve(newItem);
     }
-    return Promise.resolve(shopProducts[idx]);
   }
 
   if (action === 'shop-product-delete') {
@@ -514,6 +623,10 @@ function localPost(action, body = {}) {
   }
 
   if (action === 'populate-shop-defaults') {
+    const targetShop = shops.find((s) => String(s.shopId) === String(body.shopId));
+    if (targetShop && targetShop.category !== 'Grocery') {
+      return Promise.resolve([]); // Default items hidden for non-grocery
+    }
     const defaultProducts = GROCERY_DEFAULT_ITEMS.map((item, idx) => ({
       productId: `SP_${body.shopId}_${idx + 1}`,
       shopId: body.shopId,
@@ -652,9 +765,21 @@ export const api = {
   getUser: (userId) => get('user', { userId }),
   updateUser: (payload) => post('user', payload),
 
+  // Stale-While-Revalidate Caching Methods (Instant load + background refresh)
+  getWithSWR: (action, params, onFreshData) => getWithSWR(action, params, onFreshData),
+  getProductsSWR: (params, onFreshData) => getWithSWR('products', params, onFreshData),
+  getProductSWR: (productId, onFreshData) =>
+    getWithSWR('product', typeof productId === 'string' ? { productId } : productId, onFreshData),
+  getCategoriesSWR: (onFreshData) => getWithSWR('categories', {}, onFreshData),
+  getShopsSWR: (params, onFreshData) => getWithSWR('shops', params, onFreshData),
+  getShopSWR: (shopId, onFreshData) =>
+    getWithSWR('shop', typeof shopId === 'string' ? { shopId } : shopId, onFreshData),
+  getShopProductsSWR: (params, onFreshData) =>
+    getWithSWR('shop-products', typeof params === 'string' ? { shopId: params } : params, onFreshData),
+
   // Products
   getProducts: (params) => get('products', params),
-  getProduct: (productId) => get('product', { productId }),
+  getProduct: (productId) => get('product', typeof productId === 'string' ? { productId } : productId),
   createProduct: (payload) => post('product', payload),
   updateProduct: (payload) => post('product-update', payload),
   deleteProduct: (productId) => post('product-delete', { productId }),
@@ -676,27 +801,118 @@ export const api = {
   getShops: (params) => get('shops', params),
   getShop: (shopId) => get('shop', { shopId }),
   createShop: async (payload) => {
-    const shop = await post('shop-create', payload);
+    const shop = await post('shop-create', { ...payload, populateDefaults: false });
+    if (shop) {
+      try {
+        const localShops = getLocalShops();
+        const exists = localShops.some((s) => String(s.shopId) === String(shop.shopId));
+        if (!exists) {
+          saveLocalShops([shop, ...localShops]);
+        }
+        await idbStorage.removeCache('idb_cache_shops_{"status":"Approved"}');
+        await idbStorage.removeCache('idb_cache_shops_{}');
+        await idbStorage.removeCache('idb_cache_shops_{"status":"all"}');
+        if (payload.ownerUserId) {
+          await idbStorage.removeCache(`idb_cache_shops_{"ownerUserId":"${payload.ownerUserId}","status":"all"}`);
+        }
+      } catch (e) {
+        console.warn('Cache update after shop creation warning:', e);
+      }
+    }
+
+    // Run populate to store default products into Sheet ONLY if Category is Grocery and populateDefaults is true
     if (payload.category === 'Grocery' && payload.populateDefaults !== false && shop && shop.shopId) {
       try {
         await api.populateShopDefaults(shop.shopId);
+        await idbStorage.removeCache(`idb_cache_shop-products_{"shopId":"${shop.shopId}"}`);
+        await idbStorage.removeCache('idb_cache_shop-products_{}');
       } catch (err) {
         console.warn('Auto populate shop defaults warning:', err);
       }
     }
     return shop;
   },
-  updateShop: (payload) => post('shop-update', payload),
-  deleteShop: (shopId) => post('shop-delete', { shopId }),
-  approveShop: (shopId) => post('approve-shop', { shopId }),
-  rejectShop: (shopId) => post('reject-shop', { shopId }),
+  updateShop: async (payload) => {
+    const res = await post('shop-update', payload);
+    try {
+      const localShops = getLocalShops();
+      const updated = localShops.map((s) => (s.shopId === payload.shopId ? { ...s, ...payload } : s));
+      saveLocalShops(updated);
+      await idbStorage.removeCache(`idb_cache_shop_{"shopId":"${payload.shopId}"}`);
+      await idbStorage.removeCache('idb_cache_shops_{"status":"Approved"}');
+      await idbStorage.removeCache('idb_cache_shops_{}');
+    } catch (e) {}
+    return res;
+  },
+  deleteShop: async (shopId) => {
+    const res = await post('shop-delete', { shopId });
+    try {
+      const localShops = getLocalShops();
+      saveLocalShops(localShops.filter((s) => String(s.shopId) !== String(shopId)));
+      await idbStorage.removeCache('idb_cache_shops_{"status":"Approved"}');
+      await idbStorage.removeCache('idb_cache_shops_{}');
+      await idbStorage.removeCache('idb_cache_shops_{"status":"all"}');
+    } catch (e) {}
+    return res;
+  },
+  approveShop: async (shopId) => {
+    const res = await post('approve-shop', { shopId });
+    try {
+      const localShops = getLocalShops();
+      const updated = localShops.map((s) => (String(s.shopId) === String(shopId) ? { ...s, status: 'Approved' } : s));
+      saveLocalShops(updated);
+      await idbStorage.removeCache('idb_cache_shops_{"status":"Approved"}');
+      await idbStorage.removeCache('idb_cache_shops_{}');
+      await idbStorage.removeCache('idb_cache_shops_{"status":"Pending"}');
+    } catch (e) {}
+    return res;
+  },
+  rejectShop: async (shopId) => {
+    const res = await post('reject-shop', { shopId });
+    try {
+      const localShops = getLocalShops();
+      const updated = localShops.map((s) => (String(s.shopId) === String(shopId) ? { ...s, status: 'Rejected' } : s));
+      saveLocalShops(updated);
+      await idbStorage.removeCache('idb_cache_shops_{"status":"Approved"}');
+      await idbStorage.removeCache('idb_cache_shops_{}');
+      await idbStorage.removeCache('idb_cache_shops_{"status":"Pending"}');
+    } catch (e) {}
+    return res;
+  },
   toggleShopLike: (shopId, userId) => post('toggle-shop-like', { shopId, userId }),
 
   // Shop Products API
   getShopProducts: (params) => get('shop-products', params),
-  createShopProduct: (payload) => post('shop-product-create', payload),
-  updateShopProduct: (payload) => post('shop-product-update', payload),
-  deleteShopProduct: (productId) => post('shop-product-delete', { productId }),
+  createShopProduct: async (payload) => {
+    const res = await post('shop-product-create', payload);
+    try {
+      if (payload?.shopId) {
+        await idbStorage.removeCache(`idb_cache_shop-products_{"shopId":"${payload.shopId}"}`);
+      }
+      await idbStorage.removeCache(`idb_cache_shop-products_{}`);
+    } catch (e) {}
+    return res;
+  },
+  updateShopProduct: async (payload) => {
+    const res = await post('shop-product-update', payload);
+    try {
+      if (payload?.shopId) {
+        await idbStorage.removeCache(`idb_cache_shop-products_{"shopId":"${payload.shopId}"}`);
+      }
+      await idbStorage.removeCache(`idb_cache_shop-products_{}`);
+    } catch (e) {}
+    return res;
+  },
+  deleteShopProduct: async (productId, shopId) => {
+    const res = await post('shop-product-delete', { productId });
+    try {
+      if (shopId) {
+        await idbStorage.removeCache(`idb_cache_shop-products_{"shopId":"${shopId}"}`);
+      }
+      await idbStorage.removeCache(`idb_cache_shop-products_{}`);
+    } catch (e) {}
+    return res;
+  },
   populateShopDefaults: async (shopId) => {
     try {
       return await post('populate-shop-defaults', { shopId });

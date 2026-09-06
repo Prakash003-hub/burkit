@@ -24,14 +24,24 @@ export default function Shops() {
 
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
-    api.getShops({ status: 'Approved' })
-      .then((data) => {
+
+    api.getShopsSWR({ status: 'Approved' }, (freshShops) => {
+      if (mounted && Array.isArray(freshShops)) {
+        setShops(freshShops);
+      }
+    })
+      .then((initial) => {
         if (!mounted) return;
-        setShops(Array.isArray(data) ? data : []);
+        if (Array.isArray(initial) && initial.length > 0) {
+          setShops(initial);
+          setLoading(false);
+        }
       })
       .catch((err) => console.error('Error loading shops:', err))
-      .finally(() => mounted && setLoading(false));
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
     return () => (mounted = false);
   }, []);
 

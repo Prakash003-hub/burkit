@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, PlusCircle, Store, Pencil, Eye, Trash2, MapPin } from 'lucide-react';
 import api from '../api/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -14,21 +14,64 @@ const STATUS_STYLE = {
 export default function MyShops() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [successMsg, setSuccessMsg] = useState(location.state?.successMsg || '');
 
   function load() {
     setLoading(true);
-    api.getShops({ ownerUserId: user?.userId, status: 'all' })
-      .then((data) => setShops(Array.isArray(data) ? data : []))
+    const params = {
+      ownerUserId: user?.userId,
+      mobile: user?.mobile,
+      status: 'all',
+    };
+
+    const cleanNum = (n) => String(n || '').replace(/\D/g, '').slice(-10);
+    const userMobile = cleanNum(user?.mobile);
+
+    const filterMine = (list) => {
+      if (!Array.isArray(list)) return [];
+      if (user?.isAdmin) return list; // Admin sees all registered shops
+      return list.filter((s) => {
+        const shopOwnerId = String(s.ownerUserId || '');
+        const shopMobile = cleanNum(s.whatsappNo);
+        const matchUser = user?.userId && shopOwnerId === String(user.userId);
+        const matchMobile = userMobile && shopMobile === userMobile;
+        const matchOwnerMobile = userMobile && (shopOwnerId === `USR_${userMobile}` || shopOwnerId === `USR_${user?.mobile}`);
+        return matchUser || matchMobile || matchOwnerMobile;
+      });
+    };
+
+    // 1. Instant check from localStorage
+    try {
+      const raw = localStorage.getItem('burkit_shops');
+      const local = raw ? JSON.parse(raw) : [];
+      const myLocal = filterMine(local);
+      if (myLocal.length > 0) {
+        setShops(myLocal);
+        setLoading(false);
+      }
+    } catch (e) {}
+
+    // 2. SWR fetch with server revalidation
+    api.getShopsSWR(params, (freshShops) => {
+      const myShops = filterMine(freshShops);
+      setShops(myShops);
+    })
+      .then((initial) => {
+        const myShops = filterMine(initial);
+        setShops(myShops);
+        setLoading(false);
+      })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }
 
   useEffect(() => {
-    if (user?.userId) load();
-  }, [user?.userId]);
+    load();
+  }, [user?.userId, user?.mobile, user?.isAdmin]);
 
   async function handleDeleteShop(shop) {
     if (!confirm(`Are you sure you want to delete "${shop.shopName}"?`)) return;
@@ -42,6 +85,13 @@ export default function MyShops() {
 
   return (
     <div className="pb-12">
+      {/* Success Banner */}
+      {successMsg && (
+        <div className="mx-4 mt-4 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 flex-1">{successMsg}</p>
+          <button onClick={() => setSuccessMsg('')} className="text-xs opacity-60 hover:opacity-100 shrink-0">✕</button>
+        </div>
+      )}
       {/* Header */}
       <div className="px-4 pt-6 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
